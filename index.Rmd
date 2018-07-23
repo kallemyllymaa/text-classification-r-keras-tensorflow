@@ -9,22 +9,42 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+# Loading data
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r data, cache = TRUE}
+library(keras)
+imdb <- dataset_imdb(num_words = 10000)
+train_data <- imdb$train$x
+train_labels <- imdb$train$y
+test_data <- imdb$test$x
+test_labels <- imdb$test$y
 ```
 
-## Including Plots
+## Taking a look into the data
+Training data (similarily to test data) consists of rows of vectors filled with ids for words.
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r describe}
+str(train_data[[1]])
+train_labels[[1]]
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r maxium, include=FALSE}
+max(sapply(train_data, max))
+```
+
+Ids can be translated to words using a list mapping ids to string-presentations. For better performance, only 10 000 most common words are used and rest replaced with question marks.
+
+```{r example_review, echo=FALSE}
+# Named list mapping words to an integer index.
+word_index <- keras::dataset_imdb_word_index()  
+reverse_word_index <- names(word_index)
+names(reverse_word_index) <- word_index
+
+# Decodes the review. Note that the indices are offset by 3 because 0, 1, and 
+# 2 are reserved indices for "padding," "start of sequence," and "unknown."
+decoded_review <- sapply(train_data[[1]], function(index) {
+  word <- if (index >= 3) reverse_word_index[[as.character(index - 3)]]
+  if (!is.null(word)) word else "?"
+})
+cat(decoded_review)
+```

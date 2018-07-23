@@ -22,6 +22,7 @@
 <script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
 <script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
 <script src="site_libs/navigation-1.1/tabsets.js"></script>
+<script src="site_libs/navigation-1.1/codefolding.js"></script>
 <link href="site_libs/highlightjs-9.12.0/default.css" rel="stylesheet" />
 <script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
 
@@ -112,6 +113,14 @@ $(document).ready(function () {
 </script>
 
 <!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
+<script>
+$(document).ready(function () {
+  window.initializeCodeFolding("show" === "show");
+});
+</script>
 
 
 
@@ -119,6 +128,14 @@ $(document).ready(function () {
 
 
 <div class="fluid-row" id="header">
+
+<div class="btn-group pull-right">
+<button type="button" class="btn btn-default btn-xs dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+</ul>
+</div>
 
 
 
@@ -128,25 +145,118 @@ $(document).ready(function () {
 
 </div>
 
+<div id="TOC">
+<ul>
+<li><a href="#predicting-the-tone-of-a-review">Predicting the tone of a review</a></li>
+<li><a href="#exploratory-data-analysis">Exploratory data analysis</a><ul>
+<li><a href="#loading-data">Loading data</a></li>
+<li><a href="#taking-a-look-into-the-data">Taking a look into the data</a></li>
+</ul></li>
+<li><a href="#data-wrangling">Data wrangling</a></li>
+<li><a href="#creating-a-data-model">Creating a data model</a></li>
+<li><a href="#model-validation">Model validation</a></li>
+</ul>
+</div>
 
-<div id="loading-data" class="section level1">
-<h1>Loading data</h1>
+<div id="predicting-the-tone-of-a-review" class="section level1">
+<h1>Predicting the tone of a review</h1>
+<p>binary classification</p>
+</div>
+<div id="exploratory-data-analysis" class="section level1">
+<h1>Exploratory data analysis</h1>
+<div id="loading-data" class="section level2">
+<h2>Loading data</h2>
 <pre class="r"><code>library(keras)
 imdb &lt;- dataset_imdb(num_words = 10000)
 train_data &lt;- imdb$train$x
 train_labels &lt;- imdb$train$y
 test_data &lt;- imdb$test$x
 test_labels &lt;- imdb$test$y</code></pre>
+</div>
 <div id="taking-a-look-into-the-data" class="section level2">
 <h2>Taking a look into the data</h2>
 <p>Training data (similarily to test data) consists of rows of vectors filled with ids for words.</p>
 <pre class="r"><code>str(train_data[[1]])</code></pre>
 <pre><code>##  int [1:218] 1 14 22 16 43 530 973 1622 1385 65 ...</code></pre>
+<p>Labels indicate if the review is considered as positive (1) or negative (0).</p>
 <pre class="r"><code>train_labels[[1]]</code></pre>
 <pre><code>## [1] 1</code></pre>
 <p>Ids can be translated to words using a list mapping ids to string-presentations. For better performance, only 10 000 most common words are used and rest replaced with question marks.</p>
+<pre class="r"><code>library(keras)
+word_index &lt;- dataset_imdb_word_index()  
+reverse_word_index &lt;- names(word_index)
+names(reverse_word_index) &lt;- word_index
+
+# Decodes the review. Note that the indices are offset by 3 because 0, 1, and 
+# 2 are reserved indices for &quot;padding,&quot; &quot;start of sequence,&quot; and &quot;unknown.&quot;
+decoded_review &lt;- sapply(train_data[[1]], function(index) {
+  word &lt;- if (index &gt;= 3) reverse_word_index[[as.character(index - 3)]]
+  if (!is.null(word)) word else &quot;?&quot;
+})
+cat(decoded_review)</code></pre>
 <pre><code>## ? this film was just brilliant casting location scenery story direction everyone&#39;s really suited the part they played and you could just imagine being there robert ? is an amazing actor and now the same being director ? father came from the same scottish island as myself so i loved the fact there was a real connection with this film the witty remarks throughout the film were great it was just brilliant so much that i bought the film as soon as it was released for ? and would recommend it to everyone to watch and the fly fishing was amazing really cried at the end it was so sad and you know what they say if you cry at a film it must have been good and this definitely was also ? to the two little boy&#39;s that played the ? of norman and paul they were just brilliant children are often left out of the ? list i think because the stars that play them all grown up are such a big profile for the whole film but these children are amazing and should be praised for what they have done don&#39;t you think the whole story was so lovely because it was true and was someone&#39;s life after all that was shared with us all</code></pre>
 </div>
+</div>
+<div id="data-wrangling" class="section level1">
+<h1>Data wrangling</h1>
+<p>As the data is presented in a vector of ids, it needs to be translated into a tensor.</p>
+<pre class="r"><code>vectorize_sequences &lt;- function(sequences, dimension = 10000) {
+  # Creates an all-zero matrix of shape (length(sequences), dimension)
+  results &lt;- matrix(0, nrow = length(sequences), ncol = dimension) 
+  for (i in 1:length(sequences))
+    # Sets specific indices of results[i] to 1s
+    results[i, sequences[[i]]] &lt;- 1 
+  results
+}</code></pre>
+<pre class="r"><code>x_train &lt;- vectorize_sequences(train_data)
+x_test &lt;- vectorize_sequences(test_data)</code></pre>
+<pre class="r"><code>y_train &lt;- as.numeric(train_labels)
+y_test &lt;- as.numeric(test_labels)</code></pre>
+</div>
+<div id="creating-a-data-model" class="section level1">
+<h1>Creating a data model</h1>
+<pre class="r"><code>library(keras)
+
+model &lt;- keras_model_sequential() %&gt;% 
+  layer_dense(units = 16, activation = &quot;relu&quot;, input_shape = c(10000)) %&gt;% 
+  layer_dense(units = 16, activation = &quot;relu&quot;) %&gt;% 
+  layer_dense(units = 1, activation = &quot;sigmoid&quot;)</code></pre>
+<pre class="r"><code>model %&gt;% compile(
+  optimizer = &quot;rmsprop&quot;,
+  loss = &quot;binary_crossentropy&quot;,
+  metrics = c(&quot;accuracy&quot;)
+)</code></pre>
+</div>
+<div id="model-validation" class="section level1">
+<h1>Model validation</h1>
+<pre class="r"><code>val_indices &lt;- sample(1:25000, 10000, replace=F)
+
+x_val &lt;- x_train[val_indices,]
+partial_x_train &lt;- x_train[-val_indices,]
+
+y_val &lt;- y_train[val_indices]
+partial_y_train &lt;- y_train[-val_indices]</code></pre>
+<pre class="r"><code>val_history &lt;- model %&gt;% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 10,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)</code></pre>
+<pre class="r"><code>plot(val_history)</code></pre>
+<p><img src="index_files/figure-html/plotting_validation-1.png" width="672" /></p>
+<pre class="r"><code>model %&gt;% predict(x_test[1:10,])</code></pre>
+<pre><code>##              [,1]
+##  [1,] 0.041063890
+##  [2,] 0.999997139
+##  [3,] 0.999910593
+##  [4,] 0.975024998
+##  [5,] 0.990224183
+##  [6,] 0.921209335
+##  [7,] 0.999720633
+##  [8,] 0.002713791
+##  [9,] 0.999119818
+## [10,] 0.996296465</code></pre>
 </div>
 
 

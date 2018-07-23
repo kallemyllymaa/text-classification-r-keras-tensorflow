@@ -2,14 +2,22 @@
 title: "Text Classification with R"
 author: "Kalle Myllymaa"
 date: "23 July 2018"
-output: html_document
+output:
+  html_document:
+    toc: true
+    code_folding: "show"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Predicting the tone of a review
 
-# Loading data
+binary classification
+
+# Exploratory data analysis
+
+## Loading data
 
 ```{r data, cache = TRUE}
 library(keras)
@@ -23,8 +31,13 @@ test_labels <- imdb$test$y
 ## Taking a look into the data
 Training data (similarily to test data) consists of rows of vectors filled with ids for words.
 
-```{r describe}
+```{r describe_train_data}
 str(train_data[[1]])
+```
+
+Labels indicate if the review is considered as positive (1) or negative (0).
+
+```{r describe_train_label}
 train_labels[[1]]
 ```
 
@@ -34,9 +47,9 @@ max(sapply(train_data, max))
 
 Ids can be translated to words using a list mapping ids to string-presentations. For better performance, only 10 000 most common words are used and rest replaced with question marks.
 
-```{r example_review, echo=FALSE}
-# Named list mapping words to an integer index.
-word_index <- keras::dataset_imdb_word_index()  
+```{r example_review}
+library(keras)
+word_index <- dataset_imdb_word_index()  
 reverse_word_index <- names(word_index)
 names(reverse_word_index) <- word_index
 
@@ -47,4 +60,78 @@ decoded_review <- sapply(train_data[[1]], function(index) {
   if (!is.null(word)) word else "?"
 })
 cat(decoded_review)
+```
+
+# Data wrangling
+
+As the data is presented in a vector of ids, it needs to be translated into a tensor.
+
+```{r }
+vectorize_sequences <- function(sequences, dimension = 10000) {
+  # Creates an all-zero matrix of shape (length(sequences), dimension)
+  results <- matrix(0, nrow = length(sequences), ncol = dimension) 
+  for (i in 1:length(sequences))
+    # Sets specific indices of results[i] to 1s
+    results[i, sequences[[i]]] <- 1 
+  results
+}
+```
+
+```{r data_conversion}
+x_train <- vectorize_sequences(train_data)
+x_test <- vectorize_sequences(test_data)
+```
+
+```{r label_conversion}
+y_train <- as.numeric(train_labels)
+y_test <- as.numeric(test_labels)
+```
+
+# Creating a data model
+
+```{r model_creation}
+library(keras)
+
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 16, activation = "relu", input_shape = c(10000)) %>% 
+  layer_dense(units = 16, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+```
+
+```{r model_compilation}
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+# Model validation
+
+```{r validation_dataset_creation}
+val_indices <- sample(1:25000, 10000, replace=F)
+
+x_val <- x_train[val_indices,]
+partial_x_train <- x_train[-val_indices,]
+
+y_val <- y_train[val_indices]
+partial_y_train <- y_train[-val_indices]
+```
+
+```{r validation}
+val_history <- model %>% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 10,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)
+```
+
+```{r plotting_validation}
+plot(val_history)
+```
+
+```{r predictions}
+model %>% predict(x_test[1:10,])
 ```
